@@ -1,3 +1,4 @@
+import cv2
 import tensorflow as tf
 import numpy as np
 import os
@@ -6,6 +7,11 @@ tf.logging.set_verbosity(tf.logging.INFO)
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
+video_capture = cv2.VideoCapture(0)
+video_capture.set(cv2.cv.CV_CAP_PROP_FRAME_WIDTH, 160)
+video_capture.set(cv2.cv.CV_CAP_PROP_FRAME_HEIGHT, 120)
+
+label_names = [ "safe", "unsafe" ]
 
 def model_fn(features, labels, mode):
     input_layer = tf.reshape(features, [-1, 160, 120, 3])
@@ -47,6 +53,28 @@ def model_fn(features, labels, mode):
 
     return tf.estimator.EstimatorSpec(
         mode=mode, loss=loss, eval_metric_ops=metrics)
+
+
+def live_input_fn():
+    ret, frame = video_capture.read()
+    # cv2.imshow('Video', frame)
+
+    #frame = cv2.imread("/home/fgervais/tf/door_keeper/dataset/train/safe/2017-11-09-100746.jpg")
+    #frame = cv2.imread("/home/fgervais/tf/door_keeper/dataset/train/unsafe/2017-11-09-093716.jpg")
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    frame = tf.image.convert_image_dtype(frame, dtype=tf.float32)
+    frame = tf.image.per_image_standardization(frame)
+
+
+    frame = tf.reshape(frame, [1, 120, 160, 3])
+    dataset = tf.contrib.data.Dataset.from_tensor_slices(frame)
+    dataset = dataset.batch(1)
+
+    iterator = dataset.make_one_shot_iterator()
+
+    features = iterator.get_next()
+    return features, None
 
 
 def dataset_input_fn(record, is_training, batch_size, num_epochs=1):
@@ -107,10 +135,26 @@ def dataset_input_fn(record, is_training, batch_size, num_epochs=1):
 #                               num_epochs=1))
 # exit(0)
 
-for _ in range(10):
-    toy_classifier = tf.estimator.Estimator(
-        model_fn=model_fn, model_dir=script_dir + "/cnn_tflayers")
 
+toy_classifier = tf.estimator.Estimator(
+    model_fn=model_fn, model_dir=script_dir + "/cnn_tflayers")
+
+for _ in range(10):
+    predictions = toy_classifier.predict(
+        input_fn=live_input_fn
+    )
+    for p in predictions:
+        print(label_names[p["classes"]])
+        print(p["probabilities"])
+
+    # if cv2.waitKey(1) & 0xFF == ord('q'):
+    #     break
+
+video_capture.release()
+cv2.destroyAllWindows()
+exit(0)
+
+for _ in range(10):
     # Train the model
     # train_input_fn = tf.estimator.inputs.numpy_input_fn(
     #     x={"x": train_data},
